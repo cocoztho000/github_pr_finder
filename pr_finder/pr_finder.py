@@ -10,7 +10,7 @@ from config import DoveConfig
 from github3 import login
 
 # Github Information
-GITHUB_TOKEN    = 'd8e505c22c1ff60715a8da9a86e46f4b19d2b5d3'
+GITHUB_TOKEN    = ''
 GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
@@ -64,18 +64,39 @@ class PRFinder(object):
         pr_finder_file_info = repo_directory_files['.pr_finder.conf']
         REVIEWS_file_info = repo_directory_files['REVIEWS.md']
 
-        users_pr_repos = self.read_in_config(repo_name)
+        users_pr_repos = self.read_in_config(pr_finder_file_info)
+
+        review_file_new_content = ''
+
+        # Cache for prs
+        save_prs = {}
 
         # For each person in the config
         for person, watch_repos in users_pr_repos.items():
+            review_file_new_content += '\n##%s' % person
             # For each one of these people repos listed
             for repo_owner, watch_repo_name in watch_repos.items():
+                review_file_new_content += '\n###%s' % watch_repo_name
+                temp_repo_owner_name = repo_owner + '/' + watch_repo_name
+
+                # search cache for pr
+                if temp_repo_owner_name in save_prs.keys():
+                    review_file_new_content += save_prs[temp_repo_owner_name]
+                    continue
+
                 github_repo = g.repository(repo_owner, watch_repo_name)
                 repo_prs = github_repo.pull_requests(state=u'open', sort=u'open', direction=u'desc')
+
+                temp_readme_str = ''
                 # For each pull request to the above repo
                 for repo_pr in repo_prs:
+                    temp_readme_str += '\n#####%s' % repo_pr.title
 
+                review_file_new_content + temp_readme_str
+                save_prs[temp_repo_owner_name] = temp_readme_str
 
+        import pdb; pdb.set_trace()
+        REVIEWS_file_info
 
 
     def read_in_config(self, pr_finder_info):
