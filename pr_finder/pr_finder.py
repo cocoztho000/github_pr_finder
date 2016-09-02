@@ -10,7 +10,7 @@ from config import DoveConfig
 from github3 import login
 
 # Github Information
-GITHUB_TOKEN    = ''
+GITHUB_TOKEN    = '63b877b5c691b7f9541c4563b21b217923fedc40'
 GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
@@ -23,7 +23,7 @@ g = login(token=GITHUB_TOKEN)
 class PRFinder(object):
     """docstring for PRFinder"""
     def __init__(self):
-        pass
+        self.max_prs_to_show = 15
 
     def main(self):
         '''main
@@ -89,14 +89,17 @@ class PRFinder(object):
 
                 temp_readme_str = ''
                 # For each pull request to the above repo
+                max_prs = self.max_prs_to_show
                 for repo_pr in repo_prs:
-                    temp_readme_str += '\n#####%s' % repo_pr.title
+                    if max_prs <= 0:
+                        break
+                    temp_readme_str += '\n\n[%s](%s)' % (repo_pr.title, repo_pr.url)
+                    max_prs-=1
 
-                review_file_new_content + temp_readme_str
+                review_file_new_content += temp_readme_str
                 save_prs[temp_repo_owner_name] = temp_readme_str
 
-        import pdb; pdb.set_trace()
-        REVIEWS_file_info
+        REVIEWS_file_info.update('new reviews', review_file_new_content.encode('utf8'))
 
 
     def read_in_config(self, pr_finder_info):
