@@ -10,13 +10,13 @@ from config import DoveConfig
 from github3 import login
 
 # Github Information
-GITHUB_TOKEN    = '63b877b5c691b7f9541c4563b21b217923fedc40'
+GITHUB_TOKEN    = 'ba6905e03ddda43294ed86b404110e47ba6386bb'
 GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
 
 # Create Github Instance
-#g = GitHubEnterprise('https://www.github.com')
+g = GitHubEnterprise('https://www.github.ibm.com')
 
 g = login(token=GITHUB_TOKEN)
 
@@ -75,7 +75,7 @@ class PRFinder(object):
         for person, watch_repos in users_pr_repos.items():
             review_file_new_content += '\n##%s' % person
             # For each one of these people repos listed
-            for repo_owner, watch_repo_name in watch_repos.items():
+            for watch_repo_name, repo_owner in watch_repos.items():
                 review_file_new_content += '\n###%s' % watch_repo_name
                 temp_repo_owner_name = repo_owner + '/' + watch_repo_name
 
