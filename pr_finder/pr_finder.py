@@ -1,24 +1,25 @@
 
 import argparse
 import json
-import urllib
+import urllib2
 import base64
 import StringIO
 
 from config import DoveConfig
 
-from github3 import login
+from github3 import exceptions as Github_Exceptions
+from github3 import GitHubEnterprise
 
 # Github Information
-GITHUB_TOKEN    = 'ba6905e03ddda43294ed86b404110e47ba6386bb'
-GITHUB_NAME     = 'Tom Cocozzello'
-GITHUB_USERNAME = 'cocoztho000'
-GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
+GITHUB_TOKEN    = '<ADD YOUR TOKEN>'
+GITHUB_NAME     = 'THOMAS J. COCOZZELLO'
+GITHUB_USERNAME = 'tjcocozz'
+GITHUB_EMAIL    = 'tjcocozz@us.ibm.com'
+
 
 # Create Github Instance
-g = GitHubEnterprise('https://www.github.ibm.com')
-
-g = login(token=GITHUB_TOKEN)
+g = GitHubEnterprise('https://github.ibm.com')
+g.login(token=GITHUB_TOKEN)
 
 class PRFinder(object):
     """docstring for PRFinder"""
@@ -63,7 +64,6 @@ class PRFinder(object):
         # Get info about file in github
         pr_finder_file_info = repo_directory_files['.pr_finder.conf']
         REVIEWS_file_info = repo_directory_files['REVIEWS.md']
-
         users_pr_repos = self.read_in_config(pr_finder_file_info)
 
         review_file_new_content = ''
@@ -93,7 +93,7 @@ class PRFinder(object):
                 for repo_pr in repo_prs:
                     if max_prs <= 0:
                         break
-                    temp_readme_str += '\n\n[%s](%s)' % (repo_pr.title, repo_pr.url)
+                    temp_readme_str += '\n\n[%s](%s)' % (repo_pr.title, repo_pr.html_url)
                     max_prs-=1
 
                 review_file_new_content += temp_readme_str
@@ -103,9 +103,11 @@ class PRFinder(object):
 
 
     def read_in_config(self, pr_finder_info):
-
+        # Build request
+        request = urllib2.Request(pr_finder_info.git_url)
+        request.add_header('Authorization', 'Token %s' % GITHUB_TOKEN)
         # Get config file
-        config = urllib.urlopen(pr_finder_info.git_url).read()
+        config = urllib2.urlopen(request).read()
         t = json.loads(config)
         # Decode content which is stored as base64
         file_content = base64.b64decode(t['content'])
