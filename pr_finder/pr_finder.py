@@ -8,11 +8,13 @@ import time
 
 from config import DoveConfig
 
-from github3 import exceptions as Github_Exceptions
-from github3 import GitHubEnterprise
+from github3 import login
+# from github3 import exceptions as Github_Exceptions
+# from github3 import GitHubEnterprise
+
 
 # Github Information
-GITHUB_TOKEN    = ''
+GITHUB_TOKEN    = '<token>'
 GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
@@ -20,41 +22,53 @@ GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
 
 
 # Create Github Instance
-g = GitHubEnterprise('https://github.ibm.com')
-g.login(token=GITHUB_TOKEN)
+# g = GitHubEnterprise('https://github.ibm.com')
+g = login(token=GITHUB_TOKEN)
 
 class PRFinder(object):
     """docstring for PRFinder"""
     def __init__(self):
         self.max_prs_to_show = 15
-        self.example_pr_finder_config = (
-            '#   ____    ____      _____   ___   _   _   ____    _____   ____    #\n'
-            '#  |  _ \  |  _ \    |  ___| |_ _| | \ | | |  _ \  | ____| |  _ \   #\n'
-            '#  | |_) | | |_) |   | |_     | |  |  \| | | | | | |  _|   | |_) |  #\n'
-            '#  |  __/  |  _ <    |  _|    | |  | |\  | | |_| | | |___  |  _ <   #\n'
-            '#  |_|     |_| \_\   |_|     |___| |_| \_| |____/  |_____| |_| \_\  #\n'
-            '\n'
-            '# Format <repo_name> = <repo_owner>\n'
-            '\n'
-            '# You can find the `repo_name` and `repo_owner` in the url of your repo\n'
-            '# e.g.\n'
-            '# https://github.ibm.com/alchemy-containers/DevOps-Visualization-Enablement\n'
-            '# https://github.ibm.com/   <REPO OWNER>   /         <REPO NAME>\n'
-            '\n'
-            '[Tom]\n'
-            'containers-jenkins-jobs = alchemy-containers\n'
-            'artsy.github.io = artsy\n'
-            'Oscar-Evil-Twin = alchemy-containers\n'
-            'leakcanary = square\n'
-            'api-test = alchemy-containers\n'
-            'kubernetes = kubernetes\n'
-            'DevOps-Visualization-Enablement = alchemy-containers\n'
-        )
+        self.example_pr_finder_config = """
+#   ____    ____      _____   ___   _   _   ____    _____   ____    #
+#  |  _ \  |  _ \    |  ___| |_ _| | \ | | |  _ \  | ____| |  _ \   #
+#  | |_) | | |_) |   | |_     | |  |  \| | | | | | |  _|   | |_) |  #
+#  |  __/  |  _ <    |  _|    | |  | |\  | | |_| | | |___  |  _ <   #
+#  |_|     |_| \_\   |_|     |___| |_| \_| |____/  |_____| |_| \_\  #
+
+# Format <repo_name> = <repo_owner>
+
+# You can find the `repo_name` and `repo_owner` in the url of your repo
+# e.g.
+# https://github.ibm.com/alchemy-containers/DevOps-Visualization-Enablement
+# https://github.ibm.com/   <REPO OWNER>   /         <REPO NAME>
+
+# Your name should be your github username to find your comments
+[Tom]
+# DICTIONARY KEYS AND VALUES MUST BE WRAPPED IN DOUBLE QUOTES
+containers-jenkins-jobs = { "repo_owner": "alchemy-containers",
+                            "issue_labels": "bug"}
+artsy.github.io = { "repo_owner": "artsy",
+                    "issue_labels": "bug"}
+Oscar-Evil-Twin = { "repo_owner": "alchemy-containers",
+                    "issue_labels": "bug"}
+leakcanary = { "repo_owner": "square",
+               "issue_labels": "bug"}
+api-test = { "repo_owner": "alchemy-containers",
+             "issue_labels": "bug"}
+kubernetes = { "repo_owner": "kubernetes",
+               "issue_labels": "bug"}
+DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
+                                    "issue_labels": "bug"}
+
+        """
+
         # REVIEWS mardown page
         self.reviews_page = markdown('')
 
     def main(self):
         '''main
+
         Find Pull Requests that are made to projects you care about and
         make a list and add them to your teams readme
         Parameters
@@ -79,66 +93,84 @@ class PRFinder(object):
 
 
     def update_pr_section_in_readme(self, repo_name):
-        # Github library variables
-        github_repo = g.repository(GITHUB_USERNAME, repo_name)
+        '''Updates the REVIEWS markdown
 
+        Loop through users in config and find all pull requests
+        for the specified projects
+
+        Parameters
+        ----------
+        repos: name of the repo that has the .pr_finder config
+
+        Returns
+        -------
+        none
+        '''
+        # Github library variables
+        github_repo          = g.repository(GITHUB_USERNAME, repo_name)
         # Create file if it doesn't exits
         repo_directory_files = self.verify_files_exist(github_repo)
-
         # Get info about file in github
-        pr_finder_file_info = repo_directory_files['.pr_finder.conf']
-        REVIEWS_file_info = repo_directory_files['REVIEWS.md']
-        users_pr_repos = self.read_in_config(pr_finder_file_info)
-
-        cache_review_table = {}
+        pr_finder_file_info  = repo_directory_files['.pr_finder.conf']
+        REVIEWS_file_info    = repo_directory_files['REVIEWS.md']
+        users_pr_repos       = self.read_in_config(pr_finder_file_info)
+        cache_review_table   = {}
 
         # For each person in the config
         for person, watch_repos in users_pr_repos.items():
             self.reviews_page.add_h2(person)
             # For each one of these people repos listed
-            for watch_repo_name, repo_owner in watch_repos.items():
-                self.reviews_page.add_h3(watch_repo_name)
-
+            for watch_repo_name, repo_metadata in watch_repos.items():
+                repo_owner           = repo_metadata['repo_owner']
+                issue_labels         = repo_metadata['issue_labels']
                 temp_repo_owner_name = repo_owner + '/' + watch_repo_name
+                github_repo          = g.repository(repo_owner, watch_repo_name)
+                # For each pull request to the above repo
+                max_prs              = self.max_prs_to_show
+                review_table         = [['Review Title', '# of Comments', ':date:', 'merge state',
+                                         'Lines +/-', 'updated since your last comment',
+                                         'new review since your last comment']]
+
+                # Add header to readme
+                self.reviews_page.add_h3(watch_repo_name)
 
                 # search cache for pr
                 if temp_repo_owner_name in cache_review_table.keys():
+                    # If repo table has already been indexed add it to the markdown
+                    # and continue
                     self.reviews_page.add_table(cache_review_table[temp_repo_owner_name])
                     continue
 
-                github_repo = g.repository(repo_owner, watch_repo_name)
+                # Get an iterator for all the pull requests
                 repo_prs = github_repo.pull_requests(state=u'open', sort=u'open', direction=u'desc')
 
-                temp_readme_str = ''
-                # For each pull request to the above repo
-                max_prs = self.max_prs_to_show
-
-                review_table = [['Review Title', 'Number of Comments', 'DATE']]
-
                 for repo_pr in repo_prs:
-                    number_of_comments = 0
-                    new_patch_since_your_last_comment = True
-                    new_review_since_your_last_review = True
-                    updated_date = 0
+                    repo_pr.refresh()
+                    repo_href          = '[%s](%s)' % (repo_pr.title, repo_pr.html_url)
+                    number_of_comments = '%d' % repo_pr.review_comments_count or 0
+                    updated_date       = repo_pr.updated_at.strftime('%m/%d/%y %I:%M:%S')
+                    merge_state        = repo_pr.mergeable_state or ''
+                    lines_count        = '%d / %d' % (repo_pr.additions_count or 0, repo_pr.deletions_count or 0)
+                    # TODO(tjcocozz): the below are not implemented
+                    new_patch_since_your_last_comment = str(True)
+                    new_review_since_your_last_review = str(True)
 
+                    # Only show a certain number of reviews to not clutter the page
                     if max_prs <= 0:
                         break
 
-                    # Iterate through reviews on pr and find comments by person and how many there are
+                    # Iterate through reviews on pr and find comments by `person`
                     if person in repo_pr.review_comments().as_json():
                         pass
 
-                    # WHY IS THIS ALWAYS -1
-                    if repo_pr.review_comments().count > 0:
-                        import pdb; pdb.set_trace()
-
-                    review_table.append(['[%s](%s)' % (repo_pr.title, repo_pr.html_url), '1 Review', '8/2/1992'])
+                    review_table.append([repo_href, number_of_comments, updated_date, merge_state,
+                                         lines_count, new_patch_since_your_last_comment,
+                                         new_review_since_your_last_review])
 
                     max_prs-=1
 
                 cache_review_table[temp_repo_owner_name] = review_table
                 self.reviews_page.add_table(review_table)
-
 
         REVIEWS_file_info.update('new reviews', self.reviews_page.page.encode('utf8'))
 

@@ -1,6 +1,7 @@
 import ConfigParser
 import os
 import io
+import json
 
 
 class DoveConfig(object):
@@ -61,7 +62,11 @@ class DoveConfig(object):
         '''
         env_dict = {}
         for key, value in self.config.items(section):
-            env_dict[key] = value
+            try:
+                env_dict[key] = json.loads(value)
+            except ValueError:
+                env_dict[key] = value
+
         return env_dict
 
     def get(self, section, key):
