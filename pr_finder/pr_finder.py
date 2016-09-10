@@ -8,7 +8,8 @@ import time
 
 from config import DoveConfig
 
-from github3 import login
+from github3 import exceptions as Github_Exceptions
+from github3 import GitHubEnterprise
 
 # Github Information
 GITHUB_TOKEN    = ''
@@ -16,10 +17,11 @@ GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
 
-# Create Github Instance
-#g = GitHubEnterprise('https://www.github.com')
 
-g = login(token=GITHUB_TOKEN)
+
+# Create Github Instance
+g = GitHubEnterprise('https://github.ibm.com')
+g.login(token=GITHUB_TOKEN)
 
 class PRFinder(object):
     """docstring for PRFinder"""
@@ -96,6 +98,7 @@ class PRFinder(object):
             # For each one of these people repos listed
             for watch_repo_name, repo_owner in watch_repos.items():
                 self.reviews_page.add_h3(watch_repo_name)
+
                 temp_repo_owner_name = repo_owner + '/' + watch_repo_name
 
                 # search cache for pr
@@ -130,6 +133,7 @@ class PRFinder(object):
                         import pdb; pdb.set_trace()
 
                     review_table.append(['[%s](%s)' % (repo_pr.title, repo_pr.html_url), '1 Review', '8/2/1992'])
+
                     max_prs-=1
 
                 cache_review_table[temp_repo_owner_name] = review_table
@@ -157,6 +161,7 @@ class PRFinder(object):
             return github_repo.directory_contents('', return_as=dict)
 
         return repo_directory_files
+
 
     def read_in_config(self, pr_finder_info):
         # Build request
