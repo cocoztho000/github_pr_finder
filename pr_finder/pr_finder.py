@@ -3,18 +3,20 @@ import argparse
 import json
 import urllib2
 import base64
+import pytz
 import StringIO
 import time
 
 from config import DoveConfig
 
+from datetime import datetime
 from github3 import login
 # from github3 import exceptions as Github_Exceptions
 # from github3 import GitHubEnterprise
 
 
 # Github Information
-GITHUB_TOKEN    = '<token>'
+GITHUB_TOKEN    = 'c91e29666c2792db6175269ad866a9a2e41f297e'
 GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
@@ -35,17 +37,16 @@ class PRFinder(object):
 #  | |_) | | |_) |   | |_     | |  |  \| | | | | | |  _|   | |_) |  #
 #  |  __/  |  _ <    |  _|    | |  | |\  | | |_| | | |___  |  _ <   #
 #  |_|     |_| \_\   |_|     |___| |_| \_| |____/  |_____| |_| \_\  #
-
-# Format <repo_name> = <repo_owner>
-
+# Format <repo_name> = { "repo_owner": "<REPO OWNER>",
+#                        "issue_labels": "coma.seperated."}
 # You can find the `repo_name` and `repo_owner` in the url of your repo
 # e.g.
 # https://github.ibm.com/alchemy-containers/DevOps-Visualization-Enablement
 # https://github.ibm.com/   <REPO OWNER>   /         <REPO NAME>
-
 # Your name should be your github username to find your comments
 [Tom]
 # DICTIONARY KEYS AND VALUES MUST BE WRAPPED IN DOUBLE QUOTES
+setup = {"text_size": "regular"}
 containers-jenkins-jobs = { "repo_owner": "alchemy-containers",
                             "issue_labels": "bug"}
 artsy.github.io = { "repo_owner": "artsy",
@@ -59,16 +60,17 @@ api-test = { "repo_owner": "alchemy-containers",
 kubernetes = { "repo_owner": "kubernetes",
                "issue_labels": "bug"}
 DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
-                                    "issue_labels": "bug"}
-
+                                    "issue_labels": "bug" }
         """
 
         # REVIEWS mardown page
         self.reviews_page = markdown('')
 
+        self.default_setup_info = {'text_size': 'regular',
+                                   'github_usrname': ''}
+
     def main(self):
         '''main
-
         Find Pull Requests that are made to projects you care about and
         make a list and add them to your teams readme
         Parameters
@@ -94,14 +96,11 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
 
     def update_pr_section_in_readme(self, repo_name):
         '''Updates the REVIEWS markdown
-
         Loop through users in config and find all pull requests
         for the specified projects
-
         Parameters
         ----------
         repos: name of the repo that has the .pr_finder config
-
         Returns
         -------
         none
@@ -116,20 +115,29 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
         users_pr_repos       = self.read_in_config(pr_finder_file_info)
         cache_review_table   = {}
 
+        self.reviews_page.add_h3("Legend")
+        self.reviews_page.add_h5("Merge State")
+        self.reviews_page.add_h6("**clean**: Ready to go :bowtie:")
+        self.reviews_page.add_h6("**dirty**: Merge Conflicts :fearful:")
+        self.reviews_page.add_h6("**unstable**: Tests are not passing :tired_face:")
+        self.reviews_page.add_h6("**unknown**: uhh idk :no_mouth:")
+
+
         # For each person in the config
         for person, watch_repos in users_pr_repos.items():
             self.reviews_page.add_h2(person)
             # For each one of these people repos listed
-            for watch_repo_name, repo_metadata in watch_repos.items():
+            setup, repos_to_review = self._strip_setup_from_config(watch_repos)
+            for watch_repo_name, repo_metadata in repos_to_review.items():
                 repo_owner           = repo_metadata['repo_owner']
                 issue_labels         = repo_metadata['issue_labels']
                 temp_repo_owner_name = repo_owner + '/' + watch_repo_name
                 github_repo          = g.repository(repo_owner, watch_repo_name)
                 # For each pull request to the above repo
                 max_prs              = self.max_prs_to_show
-                review_table         = [['Review Title', '# of Comments', ':date:', 'merge state',
-                                         'Lines +/-', 'updated since your last comment',
-                                         'new review since your last comment']]
+                review_table         = [['Review Title', 'Submitted By', '# of Comments', ':date:', 'merge state',
+                                         'Lines +/-', 'New Patch to ' + person,
+                                         'New Comments', 'Needs Review']]
 
                 # Add header to readme
                 self.reviews_page.add_h3(watch_repo_name)
@@ -138,7 +146,7 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
                 if temp_repo_owner_name in cache_review_table.keys():
                     # If repo table has already been indexed add it to the markdown
                     # and continue
-                    self.reviews_page.add_table(cache_review_table[temp_repo_owner_name])
+                    self.reviews_page.add_table(cache_review_table[temp_repo_owner_name], setup['text_size'])
                     continue
 
                 # Get an iterator for all the pull requests
@@ -150,29 +158,92 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
                     number_of_comments = '%d' % repo_pr.review_comments_count or 0
                     updated_date       = repo_pr.updated_at.strftime('%m/%d/%y %I:%M:%S')
                     merge_state        = repo_pr.mergeable_state or ''
-                    lines_count        = '%d / %d' % (repo_pr.additions_count or 0, repo_pr.deletions_count or 0)
-                    # TODO(tjcocozz): the below are not implemented
-                    new_patch_since_your_last_comment = str(True)
-                    new_review_since_your_last_review = str(True)
+                    lines_count        = '%d / %d' % (repo_pr.additions_count or 0, (repo_pr.deletions_count * -1) or 0)
+                    users_name         = repo_pr.user.login
+                    new_review_since_your_last_review = False
+                    new_patch_since_your_last_comment = False
+                    needs_review                      = False
+
 
                     # Only show a certain number of reviews to not clutter the page
                     if max_prs <= 0:
                         break
 
+                    all_reviewers_latest_comment = None
+                    user_latest_comment = None
                     # Iterate through reviews on pr and find comments by `person`
-                    if person in repo_pr.review_comments().as_json():
-                        pass
+                    if setup['github_usrname'] != '':
+                        # ------------------------------------------------------------------------------
+                        #    Find the latest comment the user has added
+                        # ------------------------------------------------------------------------------
+                        # Loop through comments on patch and find users latest comment if they have one
+                        for comment in repo_pr.issue_comments():
+                            comment.refresh()
+                            if comment.user.login == setup['github_usrname']:
+                                if not user_latest_comment or user_latest_comment.updated_at < comment.updated_at:
+                                    user_latest_comment = comment
+                                if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < comment.updated_at:
+                                    all_reviewers_latest_comment = comment
 
-                    review_table.append([repo_href, number_of_comments, updated_date, merge_state,
-                                         lines_count, new_patch_since_your_last_comment,
-                                         new_review_since_your_last_review])
+                        # Loop through comments on patch and find users latest review if they have one
+                        for review in repo_pr.review_comments():
+                            if review.user.login == setup['github_usrname']:
+                                if not user_latest_comment or user_latest_comment.updated_at < review.updated_at:
+                                    user_latest_comment = review
+                                if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < review.updated_at:
+                                    all_reviewers_latest_comment = review
+
+
+                        # ------------------------------------------------------------------------------
+                        #   See if there are newer comments then the user comment
+                        # ------------------------------------------------------------------------------
+                        for comment in repo_pr.issue_comments():
+                            if user_latest_comment.updated_at < comment.updated_at:
+                                new_review_since_your_last_review = True
+                                break
+
+                        if new_review_since_your_last_review:
+                            for review in repo_pr.review_comments():
+                                if user_latest_comment.updated_at < review.updated_at:
+                                    new_review_since_your_last_review = True
+                                    break
+
+                        # ------------------------------------------------------------------------------
+                        # ------------------------------------------------------------------------------
+
+                        for commit in repo_pr.commits():
+                            commit.refresh()
+                            date_object = datetime.strptime(commit.as_dict()['commit']['committer']['date'], '%Y-%m-%dT%H:%M:%SZ')
+                            date_object = date_object.replace(tzinfo=pytz.UTC)
+
+                            if user_latest_comment.updated_at < date_object:
+                                new_patch_since_your_last_comment = True
+
+                            if all_reviewers_latest_comment.updated_at < date_object:
+                                needs_review = True
+
+
+                        # ------------------------------------------------------------------------------
+                        #   If user hans't commented set both to true
+                        # ------------------------------------------------------------------------------
+                        if not user_latest_comment:
+                            new_review_since_your_last_review = True
+                            new_patch_since_your_last_comment = True
+
+                    review_table.append([repo_href, users_name, number_of_comments, updated_date, merge_state,
+                                         lines_count, str(new_patch_since_your_last_comment),
+                                         str(new_review_since_your_last_review), str(needs_review)])
 
                     max_prs-=1
 
                 cache_review_table[temp_repo_owner_name] = review_table
-                self.reviews_page.add_table(review_table)
+                self.reviews_page.add_table(review_table, setup['text_size'])
 
         REVIEWS_file_info.update('new reviews', self.reviews_page.page.encode('utf8'))
+
+    def _strip_setup_from_config(self, repo_info):
+        temp_setup = repo_info.pop('setup', self.default_setup_info)
+        return (temp_setup, repo_info)
 
     def verify_files_exist(self, github_repo):
         repo_directory_files = github_repo.directory_contents('', return_as=dict)
@@ -207,6 +278,7 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
 
         return DoveConfig(file_content).getAll()
 
+
 class markdown(object):
     def __init__(self, page):
         self.page = page
@@ -229,7 +301,7 @@ class markdown(object):
     def add_h6(self, title):
         self.page += '###### %s\n' % title
 
-    def add_table(self, table_as_list):
+    def add_table(self, table_as_list, text_size):
         '''
         example table_as_list:
         [
@@ -237,17 +309,28 @@ class markdown(object):
             [row1,    row2]
         ]
         '''
+        if (text_size == 'small'):
+            text_size_before = '<sub>'
+            text_size_after = '</sub>'
+        elif (text_size == 'regular'):
+            text_size_before = ''
+            text_size_after = ''
+        else:
+            text_size_before = ''
+            text_size_after = ''
+
         def _get_table_alignment_row(number_of_rows):
             temp = ''
             for x in range(number_of_rows):
                 temp += '| :---: '
             return temp + '|\n'
-
-        for idx, row in enumerate(table_as_list):
-            self.page += '|' + ' | '.join(row) + ' | \n'
-            if idx == 0:
-                self.page += _get_table_alignment_row(len(row))
-
+        if len(table_as_list) > 1:
+            for idx, row in enumerate(table_as_list):
+                self.page += ('| %(before)s' + '%(after)s | %(before)s'.join(row) + '%(after)s | \n') % {'before': text_size_before, 'after': text_size_after}
+                if idx == 0:
+                    self.page += _get_table_alignment_row(len(row))
+        else:
+            self.add_h5('No Reviews :smiley:')
 
 # Used to call from command line
 def main():
