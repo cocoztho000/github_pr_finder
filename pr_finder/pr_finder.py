@@ -121,6 +121,7 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
         REVIEWS_file_info    = repo_directory_files['REVIEWS.md']
         users_pr_repos       = self.read_in_config(pr_finder_file_info)
         cache_review_table   = {}
+        cache_issue_table    = {}
 
         self.reviews_page.add_h3("Legend")
         self.reviews_page.add_h5("Merge State")
@@ -145,6 +146,7 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
                 review_table         = [['Review Title', 'Submitted By', '# of Comments', ':date:', 'merge state',
                                          'Lines +/-', 'New Patch to ' + person,
                                          'New Comments', 'Needs Review']]
+                issue_table          = [['Issue Title', 'Issue #', 'Submitted By', '# of Comments', ':date:','Labels', 'New Comments']]
 
                 # Add header to readme
                 self.reviews_page.add_h3(watch_repo_name)
@@ -154,36 +156,82 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
                     # If repo table has already been indexed add it to the markdown
                     # and continue
                     self.reviews_page.add_table(cache_review_table[temp_repo_owner_name], setup['text_size'])
-                    continue
+                else:
+                    # Get an iterator for all the pull requests
+                    repo_prs = github_repo.pull_requests(state=u'open', sort=u'open', direction=u'desc')
 
-                # Get an iterator for all the pull requests
-                repo_prs = github_repo.pull_requests(state=u'open', sort=u'open', direction=u'desc')
-
-                for repo_pr in repo_prs:
-                    repo_pr.refresh()
-                    repo_href          = '[%s](%s)' % (repo_pr.title, repo_pr.html_url)
-                    number_of_comments = '%d' % repo_pr.review_comments_count or 0
-                    updated_date       = repo_pr.updated_at.astimezone(tz.gettz(setup['time_zone'])).strftime('%m/%d/%y %I:%M:%S %p')
-                    merge_state        = repo_pr.mergeable_state or ''
-                    lines_count        = '%d / %d' % (repo_pr.additions_count or 0, (repo_pr.deletions_count * -1) or 0)
-                    users_name         = repo_pr.user.login
-                    new_patch, new_review, needs_review = self.anylize_review_and_comments(repo_pr, setup)
+                    for repo_pr in repo_prs:
+                        repo_pr.refresh()
+                        repo_href          = '[%s](%s)' % (repo_pr.title, repo_pr.html_url)
+                        number_of_comments = '%d' % ((repo_pr.review_comments_count or 0) + (repo_pr.comments_count or 0))
+                        updated_date       = repo_pr.updated_at.astimezone(tz.gettz(setup['time_zone'])).strftime('%m/%d/%y %I:%M:%S %p')
+                        merge_state        = repo_pr.mergeable_state or ''
+                        lines_count        = '%d / %d' % (repo_pr.additions_count or 0, (repo_pr.deletions_count * -1) or 0)
+                        users_name         = repo_pr.user.login
+                        new_patch, new_review, needs_review = self.anylize_review_and_comments(repo_pr, setup)
 
 
-                    # Only show a certain number of reviews to not clutter the page
-                    if max_prs <= 0:
-                        break
+                        # Only show a certain number of reviews to not clutter the page
+                        if max_prs <= 0:
+                            break
 
-                    review_table.append([repo_href, users_name, number_of_comments, updated_date, merge_state,
-                                         lines_count, str(new_patch),
-                                         str(new_review), str(needs_review)])
-                    max_prs-=1
+                        review_table.append([repo_href, users_name, number_of_comments, updated_date, merge_state,
+                                             lines_count, str(new_patch),
+                                             str(new_review), str(needs_review)])
+                        max_prs-=1
 
-                cache_review_table[temp_repo_owner_name] = review_table
-                self.reviews_page.add_table(review_table, setup['text_size'])
+                    cache_review_table[temp_repo_owner_name] = review_table
+                    self.reviews_page.add_table(review_table, setup['text_size'])
 
-                if setup['issue_labels']:
-                    repo_issues = github_repo.issues(state='all', sort='updated', direction='desc',labels=setup['issue_labels'] )
+                # search cache for pr
+                if temp_repo_owner_name in cache_issue_table.keys():
+                    # If repo table has already been indexed add it to the markdown
+                    # and continue
+                    self.reviews_page.add_table(cache_issue_table[temp_repo_owner_name], setup['text_size'])
+                else:
+                    if setup['issue_labels']:
+                        repo_issues = github_repo.issues(state='all', sort='updated', direction='desc', labels=setup['issue_labels'] )
+
+                        for issue in repo_issues:
+                            issue.refresh()
+                            issue_href          = '[%s](%s)' % (issue.title, issue.html_url)
+                            issue_number        = '%d' % issue.number
+                            users_name          = issue.user.login
+                            number_of_comments  = '%d' % issue.comments_count or 0
+                            updated_date        = issue.updated_at.astimezone(tz.gettz(setup['time_zone'])).strftime('%m/%d/%y %I:%M:%S %p')
+                            labels              = ', '.join([ label.name for label in issue.labels()])
+                            new_comments        = False
+                            user_latest_comment = None
+
+                            # ------------------------------------------------------------------------------
+                            # Loop through comments on issue and find users latest comment if they have one
+                            # ------------------------------------------------------------------------------
+                            for comment in issue.comments():
+                                if comment.user.login == setup['github_usrname']:
+                                    if not user_latest_comment or user_latest_comment.updated_at < comment.updated_at:
+                                        user_latest_comment = comment
+                                    if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < comment.updated_at:
+                                        all_reviewers_latest_comment = comment
+
+
+                            # ------------------------------------------------------------------------------
+                            #   See if there are newer comments then the user comment
+                            # ------------------------------------------------------------------------------
+                            for comment in issue.comments():
+                                if user_latest_comment.updated_at < comment.updated_at:
+                                    new_comments = True
+                                    break
+
+                            # ------------------------------------------------------------------------------
+                            #   If user hans't commented set to true
+                            # ------------------------------------------------------------------------------
+                            if not user_latest_comment:
+                                new_comments = True
+
+                            issue_table.append([issue_href, issue_number, users_name, number_of_comments, updated_date, labels, str(new_comments)])
+
+                        cache_issue_table[temp_repo_owner_name] = issue_table
+                        self.reviews_page.add_table(issue_table, setup['text_size'])
 
         REVIEWS_file_info.update('new reviews', self.reviews_page.page.encode('utf8'))
 
@@ -346,6 +394,7 @@ class markdown(object):
                 self.page += ('| %(before)s' + '%(after)s | %(before)s'.join(row) + '%(after)s | \n') % {'before': text_size_before, 'after': text_size_after}
                 if idx == 0:
                     self.page += _get_table_alignment_row(len(row))
+            self.page += '\n'
         else:
             self.add_h5('No Reviews :smiley:')
 
