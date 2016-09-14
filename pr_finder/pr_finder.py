@@ -3,13 +3,13 @@ import argparse
 import json
 import urllib2
 import base64
-import pytz
 import StringIO
 import time
 
 from config import DoveConfig
 
 from datetime import datetime
+from dateutil import tz
 from github3 import login
 # from github3 import exceptions as Github_Exceptions
 # from github3 import GitHubEnterprise
@@ -37,8 +37,13 @@ class PRFinder(object):
 #  | |_) | | |_) |   | |_     | |  |  \| | | | | | |  _|   | |_) |  #
 #  |  __/  |  _ <    |  _|    | |  | |\  | | |_| | | |___  |  _ <   #
 #  |_|     |_| \_\   |_|     |___| |_| \_| |____/  |_____| |_| \_\  #
+
 # Format <repo_name> = { "repo_owner": "<REPO OWNER>",
-#                        "issue_labels": "coma.seperated."}
+#                        "github_usrname": "tjcocozz",
+#                        "issue_labels": "comma,seperated,list",
+#                        "time_zone": "US/Central"}
+# List of all possible time_zones: http://stackoverflow.com/questions/13866926/python-pytz-list-of-timezones
+
 # You can find the `repo_name` and `repo_owner` in the url of your repo
 # e.g.
 # https://github.ibm.com/alchemy-containers/DevOps-Visualization-Enablement
@@ -67,7 +72,9 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
         self.reviews_page = markdown('')
 
         self.default_setup_info = {'text_size': 'regular',
-                                   'github_usrname': ''}
+                                   'github_usrname': '',
+                                   'issue_labels': '',
+                                   'time_zone': 'US/Central'}
 
     def main(self):
         '''main
@@ -156,84 +163,20 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
                     repo_pr.refresh()
                     repo_href          = '[%s](%s)' % (repo_pr.title, repo_pr.html_url)
                     number_of_comments = '%d' % repo_pr.review_comments_count or 0
-                    updated_date       = repo_pr.updated_at.strftime('%m/%d/%y %I:%M:%S')
+                    updated_date       = repo_pr.updated_at.astimezone(tz.gettz(setup['time_zone'])).strftime('%m/%d/%y %I:%M:%S %p')
                     merge_state        = repo_pr.mergeable_state or ''
                     lines_count        = '%d / %d' % (repo_pr.additions_count or 0, (repo_pr.deletions_count * -1) or 0)
                     users_name         = repo_pr.user.login
-                    new_review_since_your_last_review = False
-                    new_patch_since_your_last_comment = False
-                    needs_review                      = False
+                    new_patch, new_review, needs_review = self.anylize_review_and_comments(repo_pr, setup)
 
 
                     # Only show a certain number of reviews to not clutter the page
                     if max_prs <= 0:
                         break
 
-                    all_reviewers_latest_comment = None
-                    user_latest_comment = None
-                    # Iterate through reviews on pr and find comments by `person`
-                    if setup['github_usrname'] != '':
-                        # ------------------------------------------------------------------------------
-                        #    Find the latest comment the user has added
-                        # ------------------------------------------------------------------------------
-                        # Loop through comments on patch and find users latest comment if they have one
-                        for comment in repo_pr.issue_comments():
-                            comment.refresh()
-                            if comment.user.login == setup['github_usrname']:
-                                if not user_latest_comment or user_latest_comment.updated_at < comment.updated_at:
-                                    user_latest_comment = comment
-                                if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < comment.updated_at:
-                                    all_reviewers_latest_comment = comment
-
-                        # Loop through comments on patch and find users latest review if they have one
-                        for review in repo_pr.review_comments():
-                            if review.user.login == setup['github_usrname']:
-                                if not user_latest_comment or user_latest_comment.updated_at < review.updated_at:
-                                    user_latest_comment = review
-                                if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < review.updated_at:
-                                    all_reviewers_latest_comment = review
-
-
-                        # ------------------------------------------------------------------------------
-                        #   See if there are newer comments then the user comment
-                        # ------------------------------------------------------------------------------
-                        for comment in repo_pr.issue_comments():
-                            if user_latest_comment.updated_at < comment.updated_at:
-                                new_review_since_your_last_review = True
-                                break
-
-                        if new_review_since_your_last_review:
-                            for review in repo_pr.review_comments():
-                                if user_latest_comment.updated_at < review.updated_at:
-                                    new_review_since_your_last_review = True
-                                    break
-
-                        # ------------------------------------------------------------------------------
-                        # ------------------------------------------------------------------------------
-
-                        for commit in repo_pr.commits():
-                            commit.refresh()
-                            date_object = datetime.strptime(commit.as_dict()['commit']['committer']['date'], '%Y-%m-%dT%H:%M:%SZ')
-                            date_object = date_object.replace(tzinfo=pytz.UTC)
-
-                            if user_latest_comment.updated_at < date_object:
-                                new_patch_since_your_last_comment = True
-
-                            if all_reviewers_latest_comment.updated_at < date_object:
-                                needs_review = True
-
-
-                        # ------------------------------------------------------------------------------
-                        #   If user hans't commented set both to true
-                        # ------------------------------------------------------------------------------
-                        if not user_latest_comment:
-                            new_review_since_your_last_review = True
-                            new_patch_since_your_last_comment = True
-
                     review_table.append([repo_href, users_name, number_of_comments, updated_date, merge_state,
-                                         lines_count, str(new_patch_since_your_last_comment),
-                                         str(new_review_since_your_last_review), str(needs_review)])
-
+                                         lines_count, str(new_patch),
+                                         str(new_review), str(needs_review)])
                     max_prs-=1
 
                 cache_review_table[temp_repo_owner_name] = review_table
@@ -243,7 +186,78 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
 
     def _strip_setup_from_config(self, repo_info):
         temp_setup = repo_info.pop('setup', self.default_setup_info)
+        for key, value in self.default_setup_info.items():
+            if key not in temp_setup:
+                temp_setup[key] = value
         return (temp_setup, repo_info)
+
+    def anylize_review_and_comments(self, repo_pr, setup):
+        new_patch = False
+        new_review = False
+        needs_review = False
+        all_reviewers_latest_comment = None
+        user_latest_comment = None
+        # Iterate through reviews on pr and find comments by `person`
+        if setup['github_usrname'] != '':
+            # ------------------------------------------------------------------------------
+            #    Find the latest comment the user has added
+            # ------------------------------------------------------------------------------
+            # Loop through comments on patch and find users latest comment if they have one
+            for comment in repo_pr.issue_comments():
+                comment.refresh()
+                if comment.user.login == setup['github_usrname']:
+                    if not user_latest_comment or user_latest_comment.updated_at < comment.updated_at:
+                        user_latest_comment = comment
+                    if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < comment.updated_at:
+                        all_reviewers_latest_comment = comment
+
+            # Loop through comments on patch and find users latest review if they have one
+            for review in repo_pr.review_comments():
+                if review.user.login == setup['github_usrname']:
+                    if not user_latest_comment or user_latest_comment.updated_at < review.updated_at:
+                        user_latest_comment = review
+                    if not all_reviewers_latest_comment or all_reviewers_latest_comment.updated_at < review.updated_at:
+                        all_reviewers_latest_comment = review
+
+
+            # ------------------------------------------------------------------------------
+            #   See if there are newer comments then the user comment
+            # ------------------------------------------------------------------------------
+            for comment in repo_pr.issue_comments():
+                if user_latest_comment.updated_at < comment.updated_at:
+                    new_review = True
+                    break
+
+            if new_review:
+                for review in repo_pr.review_comments():
+                    if user_latest_comment.updated_at < review.updated_at:
+                        new_review = True
+                        break
+
+            # ------------------------------------------------------------------------------
+            #    See if this patch needs review or is new to the user
+            # ------------------------------------------------------------------------------
+
+            for commit in repo_pr.commits():
+                commit.refresh()
+                date_object = datetime.strptime(commit.as_dict()['commit']['committer']['date'], '%Y-%m-%dT%H:%M:%SZ')
+                date_object = date_object.replace(tzinfo=tz.gettz('UTC'))
+
+                if user_latest_comment.updated_at < date_object:
+                    new_patch = True
+
+                if all_reviewers_latest_comment.updated_at < date_object:
+                    needs_review = True
+
+
+            # ------------------------------------------------------------------------------
+            #   If user hans't commented set both to true
+            # ------------------------------------------------------------------------------
+            if not user_latest_comment:
+                new_review = True
+                new_patch = True
+
+        return (new_patch, new_review, needs_review)
 
     def verify_files_exist(self, github_repo):
         repo_directory_files = github_repo.directory_contents('', return_as=dict)
