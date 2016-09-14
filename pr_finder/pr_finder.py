@@ -182,6 +182,9 @@ DevOps-Visualization-Enablement = { "repo_owner": "alchemy-containers",
                 cache_review_table[temp_repo_owner_name] = review_table
                 self.reviews_page.add_table(review_table, setup['text_size'])
 
+                if setup['issue_labels']:
+                    repo_issues = github_repo.issues(state='all', sort='updated', direction='desc',labels=setup['issue_labels'] )
+
         REVIEWS_file_info.update('new reviews', self.reviews_page.page.encode('utf8'))
 
     def _strip_setup_from_config(self, repo_info):
