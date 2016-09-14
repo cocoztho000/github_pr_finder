@@ -16,7 +16,7 @@ from github3 import login
 
 
 # Github Information
-GITHUB_TOKEN    = 'c91e29666c2792db6175269ad866a9a2e41f297e'
+GITHUB_TOKEN    = '<token>'
 GITHUB_NAME     = 'Tom Cocozzello'
 GITHUB_USERNAME = 'cocoztho000'
 GITHUB_EMAIL    = 'thomas.cocozzello@gmail.com'
